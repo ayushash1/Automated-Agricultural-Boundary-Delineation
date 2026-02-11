@@ -4,9 +4,9 @@ from rasterio.windows import Window
 from itertools import product
 
 # CONFIGURATION
-INPUT_FILE = 'sentinel_export.tif'  # Your current 10m file
-OUTPUT_DIR = 'tiles_10m/'           # Folder to save small tiles
-TILE_SIZE = 128                     # 128x128 pixels (input size for model)
+INPUT_FILE = '../../data/raw/sentinel_images/sentinel_export.tif'           # Your current 10m file
+OUTPUT_DIR = '../../data/processed/tiles_10m'           # Folder to save small tiles
+TILE_SIZE = 128                                      # 128x128 pixels (input size for model)
 
 # Create output folder
 os.makedirs(OUTPUT_DIR, exist_ok=True)
