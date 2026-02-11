@@ -1,0 +1,11 @@
+
+numpy
+pandas
+rasterio
+torch
+torchvision
+scikit-learn
+matplotlib
+
+
+
