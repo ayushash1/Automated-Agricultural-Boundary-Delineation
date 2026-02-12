@@ -36,25 +36,57 @@ The pipeline consists of the following five stages:
 
 ## 📂 Project Structure
 ```text
-automated-agricultural-boundary-delineation/
+Automated_Agricultural_Boundary_Delineation/
+│
+├── .venv/
 │
 ├── data/
-│   ├── raw/                 # Original GeoTIFF files
-│   └── processed/           # Preprocessed and tiled data
+│   │
+│   ├── raw/
+│   │   └── sentinel_images/
+│   │
+│   ├── intermediate/
+│   │   ├── cleangeotiff/
+│   │   ├── resunet_probability_heatmap/
+│   │   ├── super_resolved/
+│   │   └── tiles/
+│   │
+│   └── outputs/
+│       ├── geojson/
+│       ├── masks/
+│       └── vectors/
 │
 ├── notebooks/
 │   └── geotiff_exploration.ipynb
 │
 ├── src/
-│   ├── preprocess/          # Data cleaning and normalization
-│   ├── super_resolution.py  # CNN model implementation
-│   ├── segmentation.py      # U-Net model implementation
-│   ├── vectorize.py         # GIS conversion logic
-│   ├── evaluate.py          # Performance metrics calculation
-│   └── main.py              # Pipeline orchestration
+│   │
+│   ├── ingestion/
+│   │   ├── cloud_mask.py
+│   │   ├── gcs_io.py
+│   │   └── gee_download.py
+│   │
+│   ├── super_resolution/
+│   │   ├── edsr_model.py
+│   │   ├── normalize.py
+│   │   ├── run_superres.py
+│   │   └── tiling.py
+│   │
+│   ├── segmentation/
+│   │   ├── inference.py
+│   │   ├── resunet.py
+│   │   └── threshold.py
+│   │
+│   └── posprocess/
+│       ├── export_geojson.py
+│       ├── polygonize.py
+│       └── simplify.py
 │
-├── requirements.txt
-└── README.md
+├── main.py
+├── .gitignore
+├── README.md
+└── requirements.txt
+
 ```
 
 ---
