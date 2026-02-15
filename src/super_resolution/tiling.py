@@ -3,16 +3,13 @@ import rasterio
 from rasterio.windows import Window
 from itertools import product
 
-# CONFIGURATION
-INPUT_FILE = '../../data/raw/sentinel_images/sentinel_export.tif'           # Your current 10m file
-OUTPUT_DIR = '../../data/processed/tiles_10m'           # Folder to save small tiles
-TILE_SIZE = 128                                      # 128x128 pixels (input size for model)
-
-# Create output folder
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-def tile_image(path, tile_size):
-    with rasterio.open(path) as src:
+def tile_image(input_path, output_dir, tile_size=128):
+    """
+    Split a large GeoTIFF into smaller overlapping tiles.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    with rasterio.open(input_path) as src:
         width = src.width
         height = src.height
         
@@ -44,12 +41,21 @@ def tile_image(path, tile_size):
                 
                 # Save the tile
                 filename = f"tile_{i}_{j}.tif"
-                out_path = os.path.join(OUTPUT_DIR, filename)
+                print(f"Generating tile: {filename}")
+                out_path = os.path.join(output_dir, filename)
                 
                 with rasterio.open(out_path, 'w', **profile) as dst:
                     dst.write(img_data)
                     
-        print(f"Success! Tiling complete. Check the '{OUTPUT_DIR}' folder.")
+    print(f"Tiling complete for {input_path} -> {output_dir}")
 
 if __name__ == "__main__":
-    tile_image(INPUT_FILE, TILE_SIZE)
+    # Example usage (can be overridden by importing)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', required=True, help='Input GeoTIFF')
+    parser.add_argument('--output', required=True, help='Output directory')
+    parser.add_argument('--size', type=int, default=128, help='Tile size')
+    args = parser.parse_args()
+    
+    tile_image(args.input, args.output, args.size)

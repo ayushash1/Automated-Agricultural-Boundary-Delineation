@@ -1,86 +1,84 @@
-"""
-Super Resolution Script
------------------------
-Upscales all GeoTIFF tiles in a folder using bicubic interpolation.
-Designed as a placeholder for EDSR model integration.
+import torch
+import torch.nn as nn
 
-Input  : data/intermediate/tiles/
-Output : data/intermediate/super_resolved/
-"""
+class ResBlock(nn.Module):
+    def __init__(self, n_feats, kernel_size, bn=False, act=nn.ReLU(True), res_scale=1):
+        super(ResBlock, self).__init__()
+        m = []
+        for i in range(2):
+            m.append(nn.Conv2d(n_feats, n_feats, kernel_size, padding=kernel_size//2))
+            if bn: m.append(nn.BatchNorm2d(n_feats))
+            if i == 0: m.append(act)
 
-import os
-import rasterio
-import numpy as np
-import cv2
-from rasterio.enums import Resampling
+        self.body = nn.Sequential(*m)
+        self.res_scale = res_scale
 
+    def forward(self, x):
+        res = self.body(x).mul(self.res_scale)
+        return x + res
 
-# CONFIG
+class Upsampler(nn.Sequential):
+    def __init__(self, conv, scale, n_feats, bn=False, act=False):
+        m = []
+        if (scale & (scale - 1)) == 0:    # Is scale power of 2?
+            for _ in range(int(torch.log2(torch.tensor(scale)))):
+                m.append(conv(n_feats, 4 * n_feats, 3, padding=1))
+                m.append(nn.PixelShuffle(2))
+                if bn: m.append(nn.BatchNorm2d(n_feats))
+                if act: m.append(act)
+        elif scale == 3:
+            m.append(conv(n_feats, 9 * n_feats, 3, padding=1))
+            m.append(nn.PixelShuffle(3))
+            if bn: m.append(nn.BatchNorm2d(n_feats))
+            if act: m.append(act)
+        else:
+            raise NotImplementedError
 
-INPUT_DIR = "data/intermediate/tiles"
-OUTPUT_DIR = "data/intermediate/super_resolved"
-UPSCALE_FACTOR = 4  # 10m → 2.5m
+        super(Upsampler, self).__init__(*m)
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+class EDSR(nn.Module):
+    def __init__(self, n_resblocks=16, n_feats=64, n_colors=3, scale=4, conv=nn.Conv2d):
+        super(EDSR, self).__init__()
+        
+        kernel_size = 3
+        act = nn.ReLU(True)
+        
+        self.sub_mean = MeanShift(255)
+        self.add_mean = MeanShift(255, sign=1)
 
+        # define head module
+        m_head = [conv(n_colors, n_feats, kernel_size, padding=kernel_size//2)]
 
-def super_resolve_tile(input_path, output_path):
-    """
-    Upscale a single GeoTIFF tile using bicubic interpolation.
-    """
+        # define body module
+        m_body = [
+            ResBlock(n_feats, kernel_size, res_scale=0.1, act=act) for _ in range(n_resblocks)
+        ]
+        m_body.append(conv(n_feats, n_feats, kernel_size, padding=kernel_size//2))
 
-    with rasterio.open(input_path) as src:
-        # Read all bands
-        image = src.read()  # shape: (bands, height, width)
-        profile = src.profile
+        # define tail module
+        m_tail = [
+            Upsampler(conv, scale, n_feats, act=False),
+            conv(n_feats, n_colors, kernel_size, padding=kernel_size//2)
+        ]
 
-        bands, height, width = image.shape
+        self.head = nn.Sequential(*m_head)
+        self.body = nn.Sequential(*m_body)
+        self.tail = nn.Sequential(*m_tail)
 
-        new_height = height * UPSCALE_FACTOR
-        new_width = width * UPSCALE_FACTOR
+    def forward(self, x):
+        # x = self.sub_mean(x)
+        x = self.head(x)
+        res = self.body(x)
+        res += x
+        x = self.tail(res)
+        # x = self.add_mean(x)
+        return x
 
-        super_resolved = []
-
-        # Upscale each band independently
-        for band in image:
-            band_upscaled = cv2.resize(
-                band,
-                (new_width, new_height),
-                interpolation=cv2.INTER_CUBIC
-            )
-            super_resolved.append(band_upscaled)
-
-        super_resolved = np.stack(super_resolved)
-
-        # Update metadata
-        profile.update({
-            "height": new_height,
-            "width": new_width,
-            "transform": src.transform * src.transform.scale(
-                (width / new_width),
-                (height / new_height)
-            )
-        })
-
-        with rasterio.open(output_path, "w", **profile) as dst:
-            dst.write(super_resolved)
-
-
-def process_all_tiles():
-    """
-    Loop through all tiles and apply super resolution.
-    """
-
-    for filename in os.listdir(INPUT_DIR):
-        if filename.endswith(".tif"):
-            input_path = os.path.join(INPUT_DIR, filename)
-            output_path = os.path.join(OUTPUT_DIR, filename)
-
-            print(f"Processing: {filename}")
-            super_resolve_tile(input_path, output_path)
-
-    print("✅ Super-resolution complete for all tiles.")
-
-
-if __name__ == "__main__":
-    process_all_tiles()
+class MeanShift(nn.Conv2d):
+    def __init__(self, rgb_range, rgb_mean=(0.4488, 0.4371, 0.4040), rgb_std=(1.0, 1.0, 1.0), sign=-1):
+        super(MeanShift, self).__init__(3, 3, kernel_size=1)
+        std = torch.Tensor(rgb_std)
+        self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
+        self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
+        for p in self.parameters():
+            p.requires_grad = False
